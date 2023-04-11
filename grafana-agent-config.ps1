@@ -16,7 +16,7 @@ param (
   [string] $StackRegion = "us-central1"
 )
 
-Set-Location -Path $PSScriptRoot
+Push-Location -Path $PSScriptRoot
 
 # Grafana Agent configuration file
 $agentConfigPath = "C:\Program Files\Grafana Agent\agent-config.yaml"
@@ -129,3 +129,5 @@ $replaceRegex = [regex]::Escape($replace) -replace '((\\ )|(\\t))+', '\s+' -repl
 # Re-start Grafana Agent service
 Start-Service -Name "Grafana Agent" -PassThru
 Get-Service "Grafana Agent"
+
+Pop-Location
