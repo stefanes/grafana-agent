@@ -1,4 +1,6 @@
-﻿[CmdletBinding()]
+﻿#Requires -RunAsAdministrator
+
+[CmdletBinding()]
 param (
   [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
   [string] $StackName,
