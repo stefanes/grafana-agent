@@ -1,0 +1,81 @@
+integrations:
+  agent:
+    enabled: true
+    relabel_configs:
+    - action: replace
+      source_labels:
+      - agent_hostname
+      target_label: instance
+    metric_relabel_configs:
+    - action: keep
+      regex: (prometheus_target_.*|prometheus_sd_discovered_targets|agent_build.*|agent_wal_samples_appended_total|process_start_time_seconds)
+      source_labels:
+      - __name__
+  windows_exporter:
+    enabled: true
+  prometheus_remote_write:
+  - basic_auth:
+      password: <your_prom_pass>
+      username: 42930
+    url: https://prometheus-us-central1.grafana.net/api/prom/push
+    write_relabel_configs:
+    - source_labels: [__name__]
+      regex: windows_cpu_time_total|windows_cs_hostname|windows_cs_logical_processors|windows_cs_physical_memory_bytes|windows_logical_disk_free_bytes|windows_logical_disk_read_bytes_total|windows_logical_disk_size_bytes|windows_logical_disk_write_bytes_total|windows_net_bytes_total|windows_net_current_bandwidth|windows_os_info|windows_os_physical_memory_free_bytes|windows_system_system_up_time
+      action: keep
+logs:
+  configs:
+  - clients:
+    - basic_auth:
+        password: <your_loki_pass>
+        username: 20445
+      url: https://logs-prod-us-central1.grafana.net/loki/api/v1/push
+    name: integrations
+    positions:
+      filename: /tmp/positions.yaml
+    scrape_configs:
+    - job_name: integrations/windows-exporter-application
+      windows_events:
+        use_incoming_timestamp: true
+        bookmark_path: "./bookmark-application.xml"
+        eventlog_name: "Application"
+        xpath_query: '*'
+        labels:
+          job: integrations/windows_exporter
+      relabel_configs:
+        - source_labels: ['computer']
+          target_label: 'agent_hostname'
+      pipeline_stages:
+        - json:
+            expressions:
+              source: source
+        - labels:
+            source:
+    - job_name: integrations/windows-exporter-system
+      windows_events:
+        use_incoming_timestamp: true
+        bookmark_path: "./bookmark-system.xml"
+        eventlog_name: "System"
+        xpath_query: '*'
+        labels:
+          job: integrations/windows_exporter
+      relabel_configs:
+        - source_labels: ['computer']
+          target_label: 'agent_hostname'
+      pipeline_stages:
+        - json:
+            expressions:
+              source: source
+        - labels:
+            source:
+metrics:
+  configs:
+  - name: integrations
+    remote_write:
+    - basic_auth:
+        password: <your_prom_pass>
+        username: 42930
+      url: https://prometheus-us-central1.grafana.net/api/prom/push
+    scrape_configs:
+  global:
+    scrape_interval: 15s
+  wal_directory: /tmp/grafana-agent-wal
