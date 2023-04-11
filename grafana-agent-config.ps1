@@ -28,11 +28,11 @@ Invoke-WebRequest -Uri $DOWLOAD_URL -OutFile $OUTPUT_FILE
 
 # Get used metrics
 $address = "https://$StackName.grafana.net"
-.\mimirtool-windows-amd64.exe analyze grafana --address=$address --key=$GrafanaInstanceApiKey | Out-Host
+& .\mimirtool-windows-amd64.exe analyze grafana --address=$address --key=$GrafanaInstanceApiKey | Out-Host
 
 # From used metrics, get all unused metrics we can safely drop
 $address = "https://prometheus-$StackRegion.grafana.net/api/prom"
-.\mimirtool-windows-amd64.exe analyze prometheus --address=$address --id=$PrometheusId --key=$GrafanaCloudApiKey --log.level=debug | Out-Host
+& .\mimirtool-windows-amd64.exe analyze prometheus --address=$address --id=$PrometheusId --key=$GrafanaCloudApiKey --log.level=debug | Out-Host
 
 # Stop Grafana Agent service
 Stop-Service -Name "Grafana Agent" -NoWait -Force -PassThru -ErrorAction Ignore
