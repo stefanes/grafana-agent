@@ -2,20 +2,25 @@
 
 [CmdletBinding()]
 param (
-  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-  [string] $StackName,
+    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+    [ValidateNotNullOrEmpty()]
+    [string] $StackName,
 
-  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-  [string] $GrafanaInstanceApiKey,
+    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+    [ValidateNotNullOrEmpty()]
+    [string] $GrafanaInstanceApiKey,
 
-  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-  [string] $GrafanaCloudApiKey,
+    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+    [ValidateNotNullOrEmpty()]
+    [string] $GrafanaCloudApiKey,
 
-  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-  [int] $PrometheusId,
+    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+    [ValidateNotNullOrEmpty()]
+    [int] $PrometheusId,
 
-  [Parameter(ValueFromPipelineByPropertyName)]
-  [string] $StackRegion = "us-central1"
+    [Parameter(ValueFromPipelineByPropertyName)]
+    [ValidateNotNullOrEmpty()]
+    [string] $StackRegion = "us-central1"
 )
 
 Push-Location -Path $PSScriptRoot
