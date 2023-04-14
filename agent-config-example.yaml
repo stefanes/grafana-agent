@@ -72,8 +72,8 @@ metrics:
   - name: integrations
     remote_write:
     - basic_auth:
-        password: <your_prom_pass>
-        username: 42930
+        password: <Your Grafana.com API Key>
+        username: <Your Prometheus username>
       url: https://prometheus-us-central1.grafana.net/api/prom/push
     scrape_configs:
   global:
