@@ -15,8 +15,8 @@ integrations:
     enabled: true
   prometheus_remote_write:
   - basic_auth:
-      password: <your_prom_pass>
-      username: 42930
+      password: <Your Grafana.com API Key>
+      username: <Your Prometheus username>
     url: https://prometheus-us-central1.grafana.net/api/prom/push
     write_relabel_configs:
     - source_labels: [__name__]
@@ -26,8 +26,8 @@ logs:
   configs:
   - clients:
     - basic_auth:
-        password: <your_loki_pass>
-        username: 20445
+        password: <Your Grafana.com API Key>
+        username: <Your Loki username>
       url: https://logs-prod-us-central1.grafana.net/loki/api/v1/push
     name: integrations
     positions:
