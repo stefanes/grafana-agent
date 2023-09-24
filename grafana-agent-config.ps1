@@ -2,65 +2,115 @@
 
 [CmdletBinding()]
 param (
-    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-    [ValidateNotNullOrEmpty()]
-    [string] $StackName,
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [string] $AgentConfig = "C:\Program Files\Grafana Agent\agent-config.yaml",
 
-    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-    [ValidateNotNullOrEmpty()]
-    [string] $GrafanaInstanceApiKey,
+  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [string] $StackName,
 
-    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-    [ValidateNotNullOrEmpty()]
-    [string] $GrafanaCloudApiKey,
+  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [string] $GrafanaInstanceApiKey,
 
-    [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
-    [ValidateNotNullOrEmpty()]
-    [int] $PrometheusId,
+  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [string] $GrafanaCloudApiKey,
 
-    [Parameter(ValueFromPipelineByPropertyName)]
-    [ValidateNotNullOrEmpty()]
-    [string] $StackRegion = "us-central1"
+  [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [int] $PrometheusId,
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [ValidateNotNullOrEmpty()]
+  [string] $StackRegion = "us-central1",
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [string] $PrometheusDefaultKeepString = "(.*)",
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [string] $AdditionalReplace,
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [string] $AdditionalWith,
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [switch] $SkipAnalyzeMetrics,
+
+  [Parameter(ValueFromPipelineByPropertyName)]
+  [switch] $SkipRestartService
 )
 
 Push-Location -Path $PSScriptRoot
 
-# Grafana Agent configuration file
-$agentConfigPath = "C:\Program Files\Grafana Agent\agent-config.yaml"
+if (-Not $SkipAnalyzeMetrics.IsPresent) {
+  # Download mimirtool
+  $DOWLOAD_URL = "https://github.com/grafana/mimir/releases/latest/download/mimirtool-windows-amd64.exe"
+  $OUTPUT_FILE = ".\mimirtool-windows-amd64.exe"
+  Invoke-WebRequest -Uri $DOWLOAD_URL -OutFile $OUTPUT_FILE
 
-# Download mimirtool
-$DOWLOAD_URL = "https://github.com/grafana/mimir/releases/latest/download/mimirtool-windows-amd64.exe"
-$OUTPUT_FILE = ".\mimirtool-windows-amd64.exe"
-Invoke-WebRequest -Uri $DOWLOAD_URL -OutFile $OUTPUT_FILE
+  # Get used metrics
+  $address = "https://$StackName.grafana.net"
+  & .\mimirtool-windows-amd64.exe analyze grafana --address=$address --key=$GrafanaInstanceApiKey | Out-Host
 
-# Get used metrics
-$address = "https://$StackName.grafana.net"
-& .\mimirtool-windows-amd64.exe analyze grafana --address=$address --key=$GrafanaInstanceApiKey | Out-Host
+  # From used metrics, get all unused metrics we can safely drop
+  $address = "https://prometheus-$StackRegion.grafana.net/api/prom"
+  & .\mimirtool-windows-amd64.exe analyze prometheus --address=$address --id=$PrometheusId --key=$GrafanaCloudApiKey --log.level=debug | Out-Host
+}
 
-# From used metrics, get all unused metrics we can safely drop
-$address = "https://prometheus-$StackRegion.grafana.net/api/prom"
-& .\mimirtool-windows-amd64.exe analyze prometheus --address=$address --id=$PrometheusId --key=$GrafanaCloudApiKey --log.level=debug | Out-Host
+if (-Not $SkipRestartService.IsPresent) {
+  # Stop Grafana Agent service
+  Stop-Service -Name "Grafana Agent" -NoWait -Force -PassThru -ErrorAction Ignore
+  Start-Sleep -Seconds 30
+  & taskkill /f /im agent-windows-amd64.exe
+}
 
-# Stop Grafana Agent service
-Stop-Service -Name "Grafana Agent" -NoWait -Force -PassThru -ErrorAction Ignore
-Start-Sleep -Seconds 30
-& taskkill /f /im agent-windows-amd64.exe
-
-#region windows_exporter
+#region integrations/windows_exporter
 $replace = @"
-      - __name__
+  prometheus_remote_write:
 "@
 $with = @"
 
-      - __name__
   windows_exporter:
     enabled: true
+  prometheus_remote_write:
 "@
 $replaceRegex = [regex]::Escape($replace) -replace '((\\ )|(\\t))+', '\s+' -replace '(\\r)?\\n', '\r?\n'
-(Get-Content -Raw -Path $agentConfigPath) -replace $replaceRegex, $with | Set-Content $agentConfigPath
+(Get-Content -Raw -Path $AgentConfig) -replace $replaceRegex, $with | Set-Content $AgentConfig
 #endregion
 
-#region scrape_configs
+#region integrations/prometheus_remote_write/write_relabel_configs
+# Create Prometheus metrics keep string
+if ($SkipAnalyzeMetrics.IsPresent) {
+  $keepString = $PrometheusDefaultKeepString
+}
+else {
+  $keep = (Get-Content -Path .\prometheus-metrics.json | ConvertFrom-Json -Depth 10).in_use_metric_counts.metric | Sort-Object
+  $keepString = ""
+  $keep | ForEach-Object { $keepString += "$_|" }
+  $keepString = $keepString -replace "\|$"
+}
+Write-Host "Prometheus metrics keep string: $keepString"
+# Add to config
+$replace = @"
+    url: https://prometheus-$StackRegion.grafana.net/api/prom/push
+logs:
+"@
+$with = @"
+
+    url: https://prometheus-$StackRegion.grafana.net/api/prom/push
+    write_relabel_configs:
+    - source_labels: [__name__]
+      regex: $keepString
+      action: keep
+logs:
+"@
+$replaceRegex = [regex]::Escape($replace) -replace '((\\ )|(\\t))+', '\s+' -replace '(\\r)?\\n', '\r?\n'
+(Get-Content -Raw -Path $AgentConfig) -replace $replaceRegex, $with | Set-Content $AgentConfig
+#endregion
+
+#region logs/configs/clients/scrape_configs
 $replace = @"
       filename: /tmp/positions.yaml
     scrape_configs:
@@ -105,36 +155,20 @@ $with = @"
             source:
 "@
 $replaceRegex = [regex]::Escape($replace) -replace '((\\ )|(\\t))+', '\s+' -replace '(\\r)?\\n', '\r?\n'
-(Get-Content -Raw -Path $agentConfigPath) -replace $replaceRegex, $with | Set-Content $agentConfigPath
+(Get-Content -Raw -Path $AgentConfig) -replace $replaceRegex, $with | Set-Content $AgentConfig
 #endregion
 
-#region write_relabel_configs
-# Create Prometheus metrics drop string
-$keep = (Get-Content -Path .\prometheus-metrics.json | ConvertFrom-Json -Depth 10).in_use_metric_counts.metric | Sort-Object
-$keepString = ""
-$keep | ForEach-Object { $keepString += "$_|" }
-$keepString = $keepString -replace "\|$"
-
-# Add to config
-$replace = @"
-    url: https://prometheus-$Zone.grafana.net/api/prom/push
-logs:
-"@
-$with = @"
-
-    url: https://prometheus-$Zone.grafana.net/api/prom/push
-    write_relabel_configs:
-    - source_labels: [__name__]
-      regex: $keepString
-      action: keep
-logs:
-"@
-$replaceRegex = [regex]::Escape($replace) -replace '((\\ )|(\\t))+', '\s+' -replace '(\\r)?\\n', '\r?\n'
-(Get-Content -Raw -Path $agentConfigPath) -replace $replaceRegex, $with | Set-Content $agentConfigPath
+#region Additional replace
+if ($AdditionalReplace -And $AdditionalWith) {
+  $replaceRegex = [regex]::Escape($AdditionalReplace) -replace '((\\ )|(\\t))+', '\s+' -replace '(\\r)?\\n', '\r?\n'
+  (Get-Content -Raw -Path $AgentConfig) -replace $replaceRegex, $AdditionalWith | Set-Content $AgentConfig
+}
 #endregion
 
-# Re-start Grafana Agent service
-Start-Service -Name "Grafana Agent" -PassThru
-Get-Service "Grafana Agent"
+if (-Not $SkipRestartService.IsPresent) {
+  # Re-start Grafana Agent service
+  Start-Service -Name "Grafana Agent" -PassThru
+  Get-Service "Grafana Agent"
+}
 
 Pop-Location
